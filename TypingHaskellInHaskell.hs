@@ -25,8 +25,8 @@
 -----------------------------------------------------------------------------
 
 module TypingHaskellInHaskell where
-import List(nub, (\\), intersect, union, partition)
-import Monad(msum)
+import Data.List(nub, (\\), intersect, union, partition)
+import Control.Monad
 
 -----------------------------------------------------------------------------
 -- Id:		Identifiers

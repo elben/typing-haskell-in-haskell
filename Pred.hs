@@ -13,8 +13,8 @@
 -----------------------------------------------------------------------------
 
 module Pred where
-import List(union,(\\))
-import Monad(msum)
+import Data.List(union,(\\))
+import Control.Monad(msum)
 import Id
 import Kind
 import Type
