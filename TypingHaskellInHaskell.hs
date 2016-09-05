@@ -48,7 +48,15 @@ data Kind  = Star | Kfun Kind Kind
 -- Type:		Types
 -----------------------------------------------------------------------------
 
-data Type  = TVar Tyvar | TCon Tycon | TAp  Type Type | TGen Int
+-- TVar - Type variable.
+-- TCon - Type constant. E.g. Int, [], (->), Maybe
+-- TAp  - Type application. E.g. Int -> [a] is ((->) Int ([] a)) is:
+--        TAp (TAp tArrow tInt) (TAp tList (TVar (Tyvar "a" Star)))
+--
+--        Maybe Int is (TAp (TCon (Tycon "Maybe" (Kfun Star Star))) tInt)
+--
+-- TGen - Only used in type scheme generalization?
+data Type  = TVar Tyvar | TCon Tycon | TAp Type Type | TGen Int
              deriving Eq
 
 data Tyvar = Tyvar Id Kind
@@ -57,6 +65,7 @@ data Tyvar = Tyvar Id Kind
 data Tycon = Tycon Id Kind
              deriving Eq
 
+tUnit, tChar, tInt, tInteger, tFloat, tDouble :: Type
 tUnit    = TCon (Tycon "()" Star)
 tChar    = TCon (Tycon "Char" Star)
 tInt     = TCon (Tycon "Int" Star)
@@ -64,6 +73,7 @@ tInteger = TCon (Tycon "Integer" Star)
 tFloat   = TCon (Tycon "Float" Star)
 tDouble  = TCon (Tycon "Double" Star)
 
+tList, tArrow, tTuple2 :: Type
 tList    = TCon (Tycon "[]" (Kfun Star Star))
 tArrow   = TCon (Tycon "(->)" (Kfun Star (Kfun Star Star)))
 tTuple2  = TCon (Tycon "(,)" (Kfun Star (Kfun Star Star)))
@@ -71,10 +81,15 @@ tTuple2  = TCon (Tycon "(,)" (Kfun Star (Kfun Star Star)))
 tString    :: Type
 tString     = list tChar
 
+-- Turns types into function type:
+--
+--   Int `fn` Int => Int -> Int
+--
 infixr      4 `fn`
 fn         :: Type -> Type -> Type
 a `fn` b    = TAp (TAp tArrow a) b
 
+-- Turns type into list of that type.
 list       :: Type -> Type
 list t      = TAp tList t
 
@@ -84,14 +99,16 @@ pair a b    = TAp (TAp tTuple2 a) b
 class HasKind t where
   kind :: t -> Kind
 instance HasKind Tyvar where
-  kind (Tyvar v k) = k
+  kind (Tyvar _ k) = k
 instance HasKind Tycon where
-  kind (Tycon v k) = k
+  kind (Tycon _ k) = k
 instance HasKind Type where
   kind (TCon tc) = kind tc
   kind (TVar u)  = kind u
   kind (TAp t _) = case (kind t) of
                      (Kfun _ k) -> k
+                     Star -> error "First part of app can't be Star"
+  kind TGen{} = error "Shouldn't ask for TGen's kind"
 
 -----------------------------------------------------------------------------
 -- Subst:	Substitutions
@@ -114,11 +131,11 @@ instance Types Type where
                        Just t  -> t
                        Nothing -> TVar u
   apply s (TAp l r) = TAp (apply s l) (apply s r)
-  apply s t         = t
+  apply _ t         = t
 
   tv (TVar u)  = [u]
   tv (TAp l r) = tv l `union` tv r
-  tv t         = []
+  tv _         = []
 
 instance Types a => Types [a] where
   apply s = map (apply s)
@@ -147,7 +164,7 @@ mgu (TVar u) t        = varBind u t
 mgu t (TVar u)        = varBind u t
 mgu (TCon tc1) (TCon tc2)
            | tc1==tc2 = return nullSubst
-mgu t1 t2             = fail "types do not unify"
+mgu _ _               = fail "types do not unify"
 
 varBind u t | t == TVar u      = return nullSubst
             | u `elem` tv t    = fail "occurs check fails"
@@ -162,11 +179,13 @@ match (TAp l r) (TAp l' r') = do sl <- match l l'
 match (TVar u)   t | kind u == kind t = return (u +-> t)
 match (TCon tc1) (TCon tc2)
          | tc1==tc2         = return nullSubst
-match t1 t2                 = fail "types do not match"
+match _ _                   = fail "types do not match"
 
 -----------------------------------------------------------------------------
 -- Pred:		Predicates
 -----------------------------------------------------------------------------
+
+-- Predicates are the classes that a type must implement. Example: Num a => a.
 
 data Qual t = [Pred] :=> t
               deriving Eq
@@ -180,7 +199,7 @@ instance Types t => Types (Qual t) where
 
 instance Types Pred where
   apply s (IsIn i t) = IsIn i (apply s t)
-  tv (IsIn i t)      = tv t
+  tv (IsIn _ t)      = tv t
 
 mguPred, matchPred :: Pred -> Pred -> Maybe Subst
 mguPred             = lift mgu
